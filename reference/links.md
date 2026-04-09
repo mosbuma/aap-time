@@ -31,3 +31,11 @@ https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sen
 **Role:** one digital **ready** input; **active** = **stop motor**, then laptop plays **next** looping video. **Step** starts motor again until **ready** fires once more. **Limit switches:** not used.
 
 (Add URL for the specific sensor module or circuit here.)
+
+# Bench test setup (video: DFRobot Arduino R3 + proto shield + relay + motor)
+
+https://www.youtube.com/watch?v=GxvDaQeCQKw
+
+First tests follow this **wiring / topology** (stack: **DFRobot Arduino R3**, **proto shield**, relay driving a small **5 V** motor). The **relay module in the project is not necessarily the same part** as in the video—use **your** relay’s **IN / VCC / GND** and **COM / NO / NC** labels and active‑level behavior when copying the idea.
+
+https://github.com/DFRobot/Beginner-Kit-for-Arduino/blob/master/Sample%20Code/project_13/project_13.ino
