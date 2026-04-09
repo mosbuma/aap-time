@@ -32,10 +32,14 @@ https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sen
 
 (Add URL for the specific sensor module or circuit here.)
 
-# Bench test setup (video: DFRobot Arduino R3 + proto shield + relay + motor)
+# Bench test: DFRobot Experiment 13 + custom relay
 
-https://www.youtube.com/watch?v=GxvDaQeCQKw
+Official **project 13** sample (Arduino IDE — open or copy from repo):
 
-First tests follow this **wiring / topology** (stack: **DFRobot Arduino R3**, **proto shield**, relay driving a small **5 V** motor). The **relay module in the project is not necessarily the same part** as in the video—use **your** relay’s **IN / VCC / GND** and **COM / NO / NC** labels and active‑level behavior when copying the idea.
+https://github.com/DFRobot/Beginner-Kit-for-Arduino/blob/master/Sample%20Code/project_13/project_13.ino
+
+Video (**R3 + proto shield** style stack): https://www.youtube.com/watch?v=GxvDaQeCQKw
+
+**Experiment 13 pinout:** **D2** = kit button, **D3** = relay. This project keeps that layout but uses a **custom relay module** on **D3** (set `RELAY_ACTIVE_LOW` / wiring per your board). **READY** is extra on **D4** (same input style as kit button: pull‑down + **HIGH** = active). Firmware (from repo root): `arduino/jip_rail_controller/jip_rail_controller.ino`
 
 https://github.com/DFRobot/Beginner-Kit-for-Arduino/blob/master/Sample%20Code/project_13/project_13.ino

@@ -98,25 +98,24 @@ flowchart TB
 
 **Current bench test:** Follow the **relay + 5 V motor** layout from this walkthrough: [YouTube — DFRobot Arduino R3, proto shield, relay, motor](https://www.youtube.com/watch?v=GxvDaQeCQKw) (also listed in [reference/links.md](reference/links.md)). Same **idea** (MCU → relay → motor supply), but **this project uses a different relay module**—map **IN / VCC / GND** and **COM / NO / NC** (and active‑HIGH vs active‑LOW) to **your** part, not necessarily the one on screen.
 
-**Hardware on bench (per that flow):** **DFRobot Arduino R3** (or compatible) + **proto shield** for wiring; **step** + **ready** remain **simple switches** to **GND** on spare digital pins (**D2** / **D3** in this plan); laptop via **USB**. **One direction only**—relay **on/off**, not an H-bridge.
+**Hardware on bench:** **DFRobot Experiment 13** layout from the kit + Arduino IDE sample [project_13.ino](https://github.com/DFRobot/Beginner-Kit-for-Arduino/blob/master/Sample%20Code/project_13/project_13.ino): **D2** = step button (kit pull‑down, **HIGH** = pressed), **D3** = relay (our **custom** relay module still uses **D3** for the logic input). **D4** = **ready** (wire like the kit button — **HIGH** when active). **USB** to laptop. **One direction only**—relay **on/off**.
 
 **Final install (unchanged in the rest of this plan):** **XY‑160D** + **12 V wiper** for bidirectional / PWM rail drive—swap the motor power stage when you move off the test rig.
 
-**Switch logic (sketch):** **`INPUT_PULLUP`** on **D2** / **D3**; switch closes pin to **GND** → **LOW** when active.
+**Switch logic (sketch):** Default **`DFRobot_EXP13_INPUTS` 1** in `jip_rail_controller.ino`: **D2** / **D4** use **`INPUT`** with the kit’s **pull‑down** wiring (**HIGH** = pressed). For tactiles on a breadboard with **`INPUT_PULLUP`**, set **`DFRobot_EXP13_INPUTS` 0**.
 
-**Relay logic:** Match **your** module’s datasheet/silkscreen—**IN** may be **active LOW** or **active HIGH**; invert in `digitalWrite` if needed.
+**Relay logic:** **D3** drives your **custom** module; adjust **`RELAY_ACTIVE_LOW`** (`0` = kit‑style **HIGH** energizes many discrete relays; `1` = common opto modules).
 
 **Motor current:** Prefer a **separate 5 V supply** (second USB adapter, bench supply) for the **motor / relay contact** side if the motor is more than a **tiny** load; tie **GND** of that supply to **Arduino GND**. Do **not** try to run a stiff motor entirely from the Uno’s **5 V** pin.
 
-**Example pins (test rig):** GPIO choices can follow the video for **relay** where convenient; this plan reserves **D2** / **D3** for **step** / **ready** and shows **D9** for relay **IN**—reassign in the sketch if your shield routing differs.
+**Example pins (test rig):** **DFRobot project 13** + **D4** for ready — see [reference/links.md](reference/links.md).
 
-| Arduino (test stack) | To |
+| Arduino (DFRobot exp 13 + JIP) | To |
 | --- | --- |
-| **D2** | Step switch → **GND** |
-| **D3** | Ready switch → **GND** |
-| **D9** (example) | Your relay module **IN** (signal) |
-| **5 V** | Relay module **VCC** if the module expects Uno **5 V** for logic/coil driver (per **your** relay doc) |
-| **GND** | Relay **GND**, switches, **motor supply (−)** |
+| **D2** | Step (**kit** button, **HIGH** = pressed) |
+| **D3** | **Custom** relay logic input (was kit relay pin in lesson) |
+| **D4** | Ready (same **pull‑down** style as kit button) |
+| **5 V / GND** | Per **your** relay module |
 | **USB** | Laptop |
 
 | Relay module (contact side) | To |
@@ -132,18 +131,14 @@ flowchart TB
   USB[USB_to_laptop]
   subgraph uno [Arduino_Uno]
     UsbB[USB_port]
-    D2[D2_step_PULLUP]
-    D3[D3_ready_PULLUP]
-    D9[D9_relay_IN]
+    D2[D2_step_kit]
+    D3[D3_to_relay_IN]
+    D4[D4_ready_kit_style]
     V5[5V]
     GNDa[GND]
   end
-  subgraph sw [Two_N_O_switches]
-    SWs[Step_D2_to_GND]
-    SWr[Ready_D3_to_GND]
-  end
-  subgraph rly [Relay_module_5V]
-    RIN[IN]
+  subgraph rly [Custom_relay]
+    RIN[relay_IN]
     RVcc[VCC]
     RGND[GND]
     RCOM[COM]
@@ -153,11 +148,7 @@ flowchart TB
   M[5V_DC_motor]
 
   USB <-->|Serial| UsbB
-  D2 --- SWs
-  SWs --- GNDa
-  D3 --- SWr
-  SWr --- GNDa
-  D9 --> RIN
+  D3 --> RIN
   V5 --> RVcc
   GNDa --- RGND
   Vmot --> RCOM
@@ -218,7 +209,7 @@ Firmware runs **on the UNO** as a single sketch (**Phase 1** → `arduino/`). 
 
 - Read **step** and **ready** (with **debouncing** / stable **re-arm** so a stuck **ready** does not break the cycle).
 - **State machine** matching the show cycle: idle (motor off) vs running until **ready** stops the move.
-- **Motor output:** on the **test rig**, one **digital pin** (e.g. **D9**) drives the relay **IN** (**on/off** only; match active‑HIGH vs active‑LOW to your module). For **final install**, replace that with **XY‑160D** control: **PWM** on **ENA** and direction on **IN1/IN2**.
+- **Motor output:** on the **test rig**, **D3** drives the **custom** relay like **DFRobot experiment 13** (**on/off** only; **`RELAY_ACTIVE_LOW`**). For **final install**, use **XY‑160D**: **PWM** on **ENA** and direction on **IN1/IN2**.
 - **USB Serial (Phase 1):** print **one clear line** when **ready** stops the motor (e.g. `NEXT` or `STOP` + optional index) so you can verify timing in **Serial Monitor**. **Phase 2** reuses the same convention for the laptop player—no protocol change required if you freeze the string early.
 
 ## Laptop software design (Phase 2 — deferred)
