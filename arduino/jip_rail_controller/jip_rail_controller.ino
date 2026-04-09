@@ -8,7 +8,8 @@
  *
  * Same button wiring as the kit (pull-down to GND, switch to 5 V when pressed → HIGH):
  *   D2 = START — momentary press turns motor / relay ON.
- *   D4 = STOP / ready — momentary press turns motor / relay OFF (serial line for Phase 2).
+ *   D4 = STOP / ready — press turns motor / relay OFF and prints NEXT; release prints HIDE
+ *       (Phase 2 laptop blanks video on HIDE). Use a real sensor that clears when the card moves.
  */
 
 const int pinStart = 2;
@@ -33,6 +34,9 @@ unsigned long lastStopDebounce = 0;
 
 uint16_t clipIndex = 0;
 
+// After NEXT, the next ready release emits HIDE (no HIDE at boot or without a prior NEXT).
+static bool armedForHide = false;
+
 static void relaySetMotorOn(bool on) {
 #if RELAY_ACTIVE_LOW
   digitalWrite(pinRelay, on ? LOW : HIGH);
@@ -46,6 +50,15 @@ static void onStopPressed() {
   Serial.print(F("NEXT "));
   Serial.println(clipIndex);
   clipIndex++;
+  armedForHide = true;
+}
+
+static void onReadyReleased() {
+  if (!armedForHide) {
+    return;
+  }
+  Serial.println(F("HIDE"));
+  armedForHide = false;
 }
 
 void setup() {
@@ -58,7 +71,7 @@ void setup() {
   stopState = digitalRead(pinStop);
 
   Serial.begin(115200);
-  Serial.println(F("jip_rail_controller D2=START D4=STOP/ready D3=relay"));
+  Serial.println(F("jip_rail_controller D2=START D4=ready NEXT/HIDE D3=relay"));
 }
 
 void loop() {
@@ -88,6 +101,8 @@ void loop() {
         stopState = reading;
         if (stopState == HIGH) {
           onStopPressed();
+        } else {
+          onReadyReleased();
         }
       }
     }

@@ -1,15 +1,15 @@
 ---
 name: Curtain rail video sync
-overview: "Phased delivery: Phase 1 — Arduino only (relay/XY-160D, step, ready, show-cycle FSM, Serial debug). Phase 2 — laptop + beamer + video sync on same serial contract."
+overview: "Phase 2: Mac Air M2 + HDMI; Python+pyserial+mpv; step starts transport only; ready drives show — NEXT when card seated (motor stops), HIDE when ready clears; v1 requires mpv JSON IPC for timing; ordered playlist; D4 swap later."
 todos:
   - id: phase1-arduino-fsm
     content: "Phase 1: Bench sketch — step → relay motor run → ready stops motor; re-arm; Serial Monitor logs (no video)"
-    status: pending
+    status: completed
   - id: phase1-arduino-repo
     content: "Phase 1: Add arduino/ project + pin notes matching PLAN + links.md"
-    status: pending
+    status: completed
   - id: phase2-laptop-video
-    content: "Phase 2: laptop/ playlist + player + serial listener; beamer path; freeze serial line for NEXT"
+    content: "Phase 2: Arduino ready→NEXT/HIDE + laptop Python mpv IPC — Mac Air M2 HDMI"
     status: pending
 isProject: false
 ---
@@ -21,13 +21,13 @@ isProject: false
 | Phase | Focus | Outcome |
 | --- | --- | --- |
 | **1 — Now** | **Arduino only** | Show-cycle logic on the bench: **step** starts motor (relay test rig, later **XY‑160D**), **ready** stops it; **re-arm** works; **`Serial.print`** proves events ( **Serial Monitor** , no show software yet). |
-| **2 — After** | **Laptop + video** | **`laptop/`** app: same **USB serial** cues → **next** looping clip on **beamer**; playlist + player tool. |
+| **2 — After** | **Laptop + video** | **`laptop/`** on **MacBook Air (M2)** + **HDMI**: **step** starts the **move**; **ready** **starts** show (**`NEXT`**, loop **mp4**) and **stops** show (**`HIDE`** when ready clears); **v1** uses **mpv JSON IPC** for precise timing. |
 
-The rest of this document describes the **full installation**; implementation work is **sequenced** as above—ignore **Phase 2** blocking details until **Phase 1** is stable.
+The rest of this document describes the **full installation**. **Phase 1** is **verified** on the bench. **Phase 2** is specified below in [Phase 2: Laptop, beamer, and serial sync](#phase-2-laptop-beamer-and-serial-sync). Swapping the **D4** tact for a real **ready sensor** later is **Arduino-only**; keep the **`HIDE`** / **`NEXT`** serial contract so **laptop code** stays valid — see [Later phase: bench input to real ready sensor](#later-phase-bench-input-to-real-ready-sensor).
 
 ## What you are building (one paragraph)
 
-A **motorized curtain rail** moves cards along a line; at the far end a **stripper** removes cards from the hangers. A **laptop** drives a **beamer** with looping clips. **Control narrative (agreed):** the operator presses a **step button** to **start** the wiper motor. A **single ready sensor** asserts when the motion **must stop**; the Arduino **stops the motor** and signals the laptop to **start the next video** (looped). Playback continues until the operator presses **step** again; the motor runs until the ready sensor becomes active **again**. **No limit switches**—the ready input is the sole “stop here” signal (type and mounting TBD). An **Arduino** coordinates motor and **USB serial** to the laptop (**Phase 2**). For **Phase 1**, treat **USB** as **debug output** to the **Serial Monitor**; the same lines can feed the show app later without changing the on-board FSM.
+A **motorized curtain rail** moves cards along a line; at the far end a **stripper** removes cards from the hangers. A **laptop** drives a **beamer** with looping clips. **Control narrative (agreed):** the **step** control **starts the transport sequence** (motor runs until **ready**). The **ready sensor** is the **show clock**: when the card **is in position**, the Arduino **stops the motor** and sends **`NEXT`** so the laptop **starts** that card’s looping **mp4**; when **ready clears** (card leaves the in-position zone), the Arduino sends **`HIDE`** so projection **stops** before or as the rail moves again. The operator presses **step** for the next move; the motor runs until **ready** trips **again**. **No limit switches**—the ready input is the sole “stop here / in position” signal (type and mounting TBD). **Phase 2** extends **USB serial** with **`HIDE`** (ready **falling**); **Phase 1** is **`NEXT`**-only until that firmware lands.
 
 **Code basis:** same class of setup as in [Rachel De Barros: DC motor + motor driver + Arduino](https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sensor-and-arduino/)—bidirectional DC and speed control via **XY‑160D**; triggers are **step + ready** instead of PIR-only, plus **laptop** messages.
 
@@ -51,9 +51,9 @@ The table below lists **parts that matter for this installation**, whether they 
 | LCD1602, sensors (ultrasonic, DHT11, RFID, …), LEDs, passives, etc. | Yes | Not required for v1 rail + video; useful for **debug** or future ideas | Kit tutorial |
 | **Curtain rail mechanics + 12 V car wiper motor** | No (build / salvage) | **Wiper motor** drives the rail; **coupling** (gear, pulley, friction wheel) is mechanical design. **12 V** nominal on the motor power bus to the **XY‑160D**. Expect **multi‑amp** loads under stall or drag—match **PSU** and driver ratings | [reference/links.md](reference/links.md) (rail actuator section); [Rachel tutorial — wiper-class motor + 12 V supply](https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sensor-and-arduino/) — add your **exact motor / rail** URL to `links.md` when fixed |
 | **XY‑160D** motor driver module | **Yes (ordered)** | **Primary** driver for the curtain **DC** motor: direction via **IN1/IN2**, speed via **ENA** (PWM on a `~` pin); motor supply on module’s **high‑current** screw terminals | [Order link in reference/links.md](https://amzn.to/46rwGHT); wiring pattern aligned with [Rachel article XY‑160D section](https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sensor-and-arduino/) |
-| **Ready sensor** (one, type TBD) | TBD | Digital (or conditioned) **input:** **active** means **stop the motor** and **cue next video** on the laptop. After a run, firmware **waits for ready to become active again** on the following cycle (implementation: edge vs re-arm after **inactive**—detail pass). **Replaces limit switches** for this design | Add part link to [reference/links.md](reference/links.md) when chosen |
+| **Ready sensor** (one, type TBD) | TBD | **Active:** **stop motor**, **`NEXT`** (start / advance looping clip). **Inactive** after that stop: **`HIDE`** (blank beamer). Ideally the sensor **clears as the card leaves** the view so **`HIDE`** tracks motion; firmware **re-arm** avoids bogus edges. **Replaces limit switches** for this design | Add part link to [reference/links.md](reference/links.md) when chosen |
 | **Limit / home switches** | No | **Explicitly not used** in this design | — |
-| **Laptop + beamer** | No | **Next** clip starts when ready fires; clip **loops** until operator presses **step** again | — |
+| **Laptop + beamer** | No | **`NEXT`** starts **next** looped clip when card is seated; **`HIDE`** when **ready clears**; **step** only starts motor | — |
 
 **Parts inventory source for the long listing:** [Newegg EL-KIT-001 component list](https://www.newegg.com/elegoo-el-kit-001-accessories/p/293-001C-00001) — use to tick off the box contents; treat as secondary to what is physically in your shipment.
 
@@ -83,11 +83,11 @@ flowchart TB
   PC --> HDMI[Beamer]
 ```
 
-- **Laptop ↔ UNO:** one **USB** cable — 5 V powers the board; **Serial** e.g. tells the laptop to load **next** clip when **ready** stops the motor (plus optional debug).
+- **Laptop ↔ UNO:** one **USB** cable — 5 V powers the board; **Serial**: **`NEXT`** when **ready** stops the motor; **`HIDE`** when **ready clears** after an in-position stop (Phase 2).
 - **UNO ↔ XY‑160D:** **logic only** — typically **5V**, **GND**, **ENA** (PWM speed), **IN1** / **IN2** (direction) to the column you use for **motor 1**, matching your board silkscreen and the [Rachel XY‑160D wiring notes](https://racheldebarros.com/arduino-projects/turn-on-dc-motor-with-pir-motion-sensor-and-arduino/); **common ground** between UNO and driver logic **per module datasheet**.
 - **XY‑160D ↔ wiper motor:** motor wires to the driver’s **motor outputs** (polarity only swaps direction). **12 V motor bus** from a **PSU sized for worst-case current** (wiper motors can draw **several amperes** under load or near stall; the reference build discusses **12 V / multi‑amp** supply). **Never** power the wiper from the Arduino **5 V** pin.
 - **Step button:** **digital input** (debounced). **Press:** permit **motor run** until **ready** fires.
-- **Ready sensor:** **digital** (or conditioned) **input**. **Active:** **stop motor**, notify laptop to start **next** looping video. After another **step**, motor runs until **ready** is active **again** (handle **stuck-high** with an arm/clear or edge rule in firmware—detail pass).
+- **Ready sensor:** **digital** (or conditioned) **input**. **Active:** **stop motor**, **`NEXT`** → laptop starts **next** looping clip. **Inactive** (after seated interval): **`HIDE`** → laptop blanks. After **step**, motor runs until **ready** is active **again**; handle **stuck level** with **re-arm** in firmware (detail pass).
 - **Beamer:** **HDMI** (or whatever the laptop outputs); no electrical tie to the Arduino.
 
 **Bench testing:** the block diagram above stays conceptually the same, but the **driver + high‑voltage motor** pair is temporarily **relay + 5 V motor**—see [Arduino wiring diagram (simplified)](#arduino-wiring-diagram-simplified).
@@ -183,25 +183,25 @@ flowchart LR
 
 - **Mechanical:** rail + wiper drive, hanger geometry, stripper; **ready** placed so **active** = stop motor and cue the matching **show** moment.
 - **Motion + control:** **Arduino UNO** (board + **sketch** — see [Arduino software design](#arduino-software-design)), **XY‑160D**, **step** and **ready** inputs, drives the rail.
-- **Show playback:** laptop + beamer; **next** clip on the serial cue from the Arduino when **ready** stops the motor; loop until **step** starts motion again. Laptop software: [Laptop software design](#laptop-software-design).
+- **Show playback:** laptop + beamer; **step** only **starts** motion; **`NEXT`** when **ready** stops the motor (card seated) **starts** the **next** looping **mp4**; **`HIDE`** when **ready clears** **stops** projection for precise **in-position** timing. Laptop software: [Laptop software design](#laptop-software-design).
 
 ## Show cycle (ready sensor, no limit switches)
 
 ```mermaid
 stateDiagram-v2
   direction LR
-  state "Video N loops operator idle" as Idle
-  state "Motor running" as Run
-  Idle --> Run: step_pressed
-  Run --> Idle: ready_active_stop_motor_and_serial_next_clip
+  state "Video loops, motor off" as Showing
+  state "Video off, motor may run" as DarkMove
+  Showing --> DarkMove: ready_clears_HIDE
+  DarkMove --> Showing: ready_stops_motor_NEXT
 ```
 
-- **Operator presses step:** motor **runs** (direction/speed fixed in firmware for v1 unless you add modes).
-- **Ready becomes active:** motor **stops**; laptop receives event and plays **next** video (**loop** until further notice).
-- **Operator idle:** current clip keeps looping; motor **off**.
-- **Operator presses step again:** motor runs until **ready** fires **again**—firmware must not treat an **old** ready level as a stop if the sensor does not **clear** between cycles (define **re-arm** rule in implementation).
+- **Step:** **starts** the sequence — motor **on** until **ready** stops it (**no** laptop line on step unless you add optional debug).
+- **Ready active** (in-position): motor **stops**; **`NEXT`** → laptop **starts** the **next** ordered **mp4**, **looping**.
+- **Ready inactive** after that (sensor clears, card leaves zone): **`HIDE`** → laptop **stops** projection **immediately** (low-latency **mpv** IPC in **v1**).
+- **Re-arm / bench:** production sensor should **clear** when the hanger moves; on a **held tact** for **D4**, **release** the button to simulate **`HIDE`**, or firmware treats a second edge under a test flag — see implementation notes in Phase 2.
 
-**Step index / “which clip”:** increment **once per ready** (or once per serial “NEXT” from Arduino) so clip *k* stays **paired** with transport *k*; the **step** button only **permits motion**, it does **not** by itself advance the clip in this narrative.
+**Step index / “which clip”:** advance playlist **only** on **`NEXT`**. **`HIDE`** tears down playback **only**; it does **not** increment the index.
 
 ## Arduino software design
 
@@ -210,36 +210,205 @@ Firmware runs **on the UNO** as a single sketch (**Phase 1** → `arduino/`). 
 - Read **step** and **ready** (with **debouncing** / stable **re-arm** so a stuck **ready** does not break the cycle).
 - **State machine** matching the show cycle: idle (motor off) vs running until **ready** stops the move.
 - **Motor output:** on the **test rig**, **D3** drives the **custom** relay like **DFRobot experiment 13** (**on/off** only; **`RELAY_ACTIVE_LOW`**). For **final install**, use **XY‑160D**: **PWM** on **ENA** and direction on **IN1/IN2**.
-- **USB Serial (Phase 1):** print **one clear line** when **ready** stops the motor (e.g. `NEXT` or `STOP` + optional index) so you can verify timing in **Serial Monitor**. **Phase 2** reuses the same convention for the laptop player—no protocol change required if you freeze the string early.
+- **USB Serial (Phase 2):** when **ready** stops the motor, print **`NEXT <n>`**; when **ready** becomes **inactive** after a completed in-position stop (debounced **falling** edge), print **`HIDE`**. **Step** does **not** emit show lines. See [Serial contract](#serial-contract-arduino--laptop).
 
-## Laptop software design (Phase 2 — deferred)
+## Laptop software design (Phase 2 — summary)
 
-Runs on the **laptop** (future `laptop/` project). **Start only after Phase 1** is reliable. Intended shape:
+The full breakdown is in **Phase 2** below. In one line: **Python 3** under **`laptop/`** reads **`NEXT`** / **`HIDE`**; **v1** runs **mpv** with **`--input-ipc-server`** and sends **JSON** commands (`loadfile`, stop/black) for **precise** timing; **`videos/`** (or manifest) is the ordered **mp4** list.
 
-- **Serial** input from the UNO; on “advance” / **next** event, load the **next** file in a fixed ordering and play it **fullscreen**, **looping**.
-- **Playlist:** ordered list of video files (e.g. sorted filenames or a manifest); tool choice (mpv, VLC, etc.) is a later decision.
+## Phase 2: Laptop, beamer, and serial sync
+
+This section is the **implementation plan** for show software. The Arduino stays **USB-connected** to the **same computer** that drives the **beamer**.
+
+### Assumptions (Phase 2 staging)
+
+| Topic | Choice |
+| --- | --- |
+| **Show computer** | **MacBook Air (Apple Silicon M2)** — runs the **`laptop/`** app and owns the **USB** link to the Arduino. |
+| **Projection path** | **Beamer** plugs into the laptop’s **HDMI** port (directly or via a **USB‑C hub / DisplayPort alt‑mode** adapter, depending on the exact Air model and your dongle). |
+| **Displays** | **Extended desktop** recommended: **built-in** = operator / debug; **HDMI** = audience **only** fullscreen video (configure once in **System Settings → Displays**). |
+
+### Starting requirements (product behavior)
+
+1. **Step** (D2) **starts mechanical transport** for the **next** card: motor runs until **ready** (D4 / future sensor) stops it. The *show* interpretation: this is the **beginning of the cycle** that ends with that card **settled in the viewing position**.
+2. **Projection timing** — **On** as soon as the card **is in position** (**`NEXT`** when **ready** stops the motor). **Off** when **ready clears** (**`HIDE`**) so the beamer is **dark while the rail moves**; tie-off is **sensor-driven**, not **step-driven**.
+3. **Media** — **One `.mp4` per card**; while the card is **visible** (ready **held** in the “in-position” sense), that file **plays and loops** without gaps.
+4. **Order** — Cards and clips follow a **single fixed order** (playlist index advances **only** on **`NEXT`**).
+
+**Choreography vs current bench firmware:** Phase 1 prints **`NEXT`** only on **D4 press**. Phase 2 **adds `HIDE` on ready release** (falling edge) after a stop. A **held tact** never releases — **release D4** to test **`HIDE`**, or use a sensor that **clears** when the card moves.
+
+### Platform choice (laptop software)
+
+**Question:** what stack makes it practical to **target HDMI output** and keep development fast?
+
+**Recommendation for v1: Python 3 + pyserial + mpv (Homebrew).**
+
+| Criterion | Why this fits |
+| --- | --- |
+| **Fullscreen on the beamer only** | **mpv** supports **`--fs-screen=<n>`** (screen index). After **Display Arrangement** labels the projector, pin **`n`** in config (often **`1`** when **`0`** is the built-in Liquid Retina). No need for low-level **Quartz** code in v1. |
+| **Serial** | **pyserial** is stable; device is typically **`/dev/cu.usbmodem…`** on macOS. |
+| **mp4 loop** | **`mpv --loop-file=inf`** matches “loop while card visible.” |
+| **Precise start/stop (v1, required)** | **mpv JSON IPC** (`--input-ipc-server` + Unix socket): **`loadfile`** / **`stop`** (or black frame) with **no** per-event process **spawn** — low latency for **`NEXT`** / **`HIDE`**. |
+| **Maintainability** | Small script; **`brew install mpv`** is one step. |
+
+**Alternatives (when to reconsider):** **Swift + AppKit** or **SwiftUI** if you need a polished installer, menu-bar control, and native display APIs without shelling out to **mpv**; **Electron + Node** if the team strongly prefers JavaScript — heavier runtime. For this installation, **Python + mpv** is the best **time-to-reliable-show** tradeoff on **macOS**.
+
+### High-level design (Phase 2)
+
+**Purpose:** Three cooperating pieces — **Arduino** (truth for motion), **serial** (discrete events), **player** (fullscreen on HDMI).
+
+```mermaid
+flowchart LR
+  subgraph arduino [Arduino Uno]
+    D2[D2 Step]
+    D4[D4 Ready]
+    FW[Firmware]
+    D2 --> FW
+    D4 --> FW
+    FW --> USB[USB Serial 115200]
+  end
+  subgraph mac [MacBook Air M2]
+    APP[laptop show app]
+    PL[mpv fullscreen on HDMI]
+    APP -->|JSON IPC| PL
+    APP -->|read lines| USB
+  end
+  USB --> APP
+  PL --> HDMI[HDMI beamer]
+```
+
+**Event timeline (one card cycle):**
+
+```mermaid
+sequenceDiagram
+  participant Op as Operator
+  participant A as Arduino
+  participant M as laptop app
+  participant P as mpv HDMI
+  
+  Note over Op,P: Card in view, video looping (ready active)
+  Op->>A: Step press
+  A->>A: motor on
+  Note over A: ready often clears as card leaves
+  A->>M: HIDE
+  M->>P: IPC stop black
+  A->>A: motor runs
+  A->>A: ready active, motor stops in-position
+  A->>M: NEXT n
+  M->>P: IPC loadfile loop
+  Note over P: next card visible, loop
+```
+
+**State on the Mac (conceptual):**
+
+- **Idle dark** — No file playing on HDMI (black **mpv** window quit, or **`--idle`** with no video shown); **safe** while the rail may move.
+- **Showing *i*** — Playlist entry *i* is loaded via **IPC**; **mpv** loops that **mp4** until **`HIDE`**.
+
+**Components:**
+
+| Piece | Responsibility |
+| --- | --- |
+| **Playlist builder** | Deterministic ordered list of **`.mp4`** paths (sorted filenames or manifest file). Length **≥** number of cards in the show. |
+| **Serial line parser** | **115200** line-at-a-time; recognize **`HIDE`** and **`NEXT …`** only; ignore other lines. |
+| **Player bridge (v1)** | Launch **mpv once** with **`--fullscreen`**, **`--fs-screen=`**, **`--loop-file=inf`**, **`--input-ipc-server=<socket>`**. On **`NEXT`**, **IPC** `loadfile` **next** path; on **`HIDE`**, **IPC** stop / unload / black — **no** subprocess restart on each event. |
+
+**Firmware note:** Track **ready** edges: **rising** (stop motor) → **`NEXT`**, **falling** (after a valid stop) → **`HIDE`**. Suppress spurious **`HIDE`** at boot and ensure **re-arm** only after **step** / motor run if needed. Phase 1 sketch has **`NEXT`** only — add **`HIDE`** and edge logic for Phase 2.
+
+### Objectives
+
+1. **Listen** at **115200** on the Arduino’s USB serial device (**`/dev/cu.usbmodem*`** on macOS).
+2. **v1:** one long-lived **mpv** + **JSON IPC** for all **`NEXT`** / **`HIDE`** handling (precise timing — not optional “hardening”).
+3. On **`NEXT`**, **IPC**-load the **next** playlist entry **fullscreen** on the HDMI screen, **`mp4` loop** until **`HIDE`**.
+4. On **`HIDE`**, **IPC**-stop / black **immediately** when **ready** clears (playlist index unchanged).
+5. Sensor swap on **D4** does not change **`HIDE`** / **`NEXT`** semantics.
+
+### Serial contract (Arduino → laptop)
+
+The laptop parses **two** line types (and ignores the rest):
+
+| Line | When emitted | Laptop action |
+| --- | --- | --- |
+| **`HIDE`** | **Ready** goes **inactive** after an in-position stop (debounced **falling** edge) | **IPC**: stop / black; **do not** change playlist index. |
+| **`NEXT <n>`** | **Ready** stops motor — same instant as today’s `onStopPressed` (**rising** / active edge) | **IPC**: load and **loop** the **next** clip in fixed order (or validate **`<n>`** against a manifest). |
+
+**Playlist index rule (recommended):** maintain **`playlist_index`** on the laptop: each **`NEXT`** increments and loads that file; **`HIDE`** does not increment. **Alternatively**, use **`<n>`** from the Arduino as the clip id if you strictly couple sketch counter to folder order — then validate **`n`** is in range.
+
+**Parsing:** Lines starting with **`HIDE`** (trim whitespace); lines starting with **`NEXT`** + whitespace + integer. **CR** and/or **LF** line endings.
+
+### Later phase: bench input to real ready sensor
+
+**Boundary:** **`laptop/`** and the **`HIDE`** / **`NEXT …`** lines stay fixed. Only **Arduino wiring + sketch** change when **D4** stops being a kit-style tactile and becomes the production sensor—**Phase 2** keeps listening for the same **two** tokens.
+
+1. **Choose hardware** — One digital **“stop the move here”** signal (limit switch, proximity module, hall + magnet, etc.). Add part numbers and schematic notes to [reference/links.md](reference/links.md) when locked.
+2. **Electrical interface** — Bring **safe logic levels** to the UNO: **5 V-tolerant behaviour on D4** per the ATmega328P datasheet; never exceed **Vcc** on the pin. Industrial **12 V / 24 V** outputs need **a divider, level shifter, comparator, or relay/opto**—not raw high voltage. Keep a **single GND** reference between sensor supply return and Arduino **GND** unless you use **galvanic isolation** (then only the Arduino-side of the isolator ties to UNO **GND**).
+3. **Active level** — Match **logical active** to today’s meaning of **stop** (bench: **HIGH** on **D4** = ready). If the part asserts **LOW** when active, **invert in firmware** or choose **NC vs NO** wiring so **stop** still reads the same polarity you expect before touching show code.
+4. **Firmware** — Emit **`NEXT <n>`** on **ready** **active** edge when stopping motor; emit **`HIDE`** on **ready** **inactive** edge **after** a valid stop (suppress boot noise). Tune **debounce**; **re-arm** — see [Show cycle (ready sensor, no limit switches)](#show-cycle-ready-sensor-no-limit-switches).
+5. **Verify** — **Serial Monitor** at **115200**: cycle shows **`HIDE`** then **`NEXT`** (order depends on sensor: often **`HIDE`** when **ready clears** on **step**, then **`NEXT`** at next **in-position**); no spurious lines at idle.
+
+**Pin:** Prefer keeping **D4** as **ready** so the sketch pin table stays stable; moving to another **digital** pin is a **one-line** change—USB text stays the source of truth for the laptop.
+
+### `laptop/` project shape
+
+| Piece | Role |
+| --- | --- |
+| **Playlist resolver** | Build an ordered list of video paths: e.g. sort filenames in `videos/*.mp4`, or read a small **manifest** (YAML/JSON/text) for explicit order. |
+| **Serial reader** | Open **`/dev/cu.usbmodem*`** (or configured path) at **115200**, read line by line. Handle **USB reconnect** (optional v1: prompt user to restart app). |
+| **Player backend** | **`mpv`** with **`--input-ipc-server`**; **v1** uses **JSON IPC** only (not one-shot **exec** per **NEXT**). |
+| **Config** | Serial **device path** (or “auto-pick Arduino-like port”), **video directory**, optional fullscreen **display index**. |
+
+### Implementation sequence (recommended)
+
+1. **Arduino:** add **ready** **falling** → **`HIDE`** (with **re-arm** / no spurious boot); keep **`NEXT`** on stop; bench tact: **release D4** to test **`HIDE`**, or simulate with wiring.
+2. **Create `laptop/`** in the repo with a minimal **README** pointing back here.
+3. **Dev environment (Mac):** **`brew install mpv`**, Python **3.11+** + **`pyserial`** (venv / **pip**).
+4. **Playlist stub:** ordered **`clip_000.mp4`**, … (or manifest).
+5. **Serial stub:** print lines from **`/dev/cu.usbmodem*`**.
+6. **mpv v1:** start **mpv once** with **`--input-ipc-server`** + **`--fs-screen=`** + **`--loop-file=inf`**; **Python** opens the IPC socket and sends **JSON** on each **`NEXT`** / **`HIDE`** (document exact commands in code).
+7. **Beamer check:** **Displays** → **extended**; fix **`fs-screen`** index.
+8. **Rehearsal:** **Step** → **`HIDE`** when **ready clears** → dark while moving → **`NEXT`** at **in-position** → loop; repeat.
+9. **Later:** stderr logging, **LaunchAgent** / login item (venue Mac).
+
+### Beamer and laptop OS (macOS)
+
+- **Cable:** **HDMI** to beamer, or **USB‑C** dock / adapter with **HDMI** (common on **Air**).
+- **Modes:** **Extended** display — fullscreen **mpv** on **projector** only; operator uses built-in for Terminal / debug.
+- **Screen index:** Discover with **mpv** / trial **`--fs-screen=0`** vs **`1`** after arranging displays; fix in **config**.
+- **Resolution / overscan:** set once in **Displays** or projector **overscan** menu so **mp4** is not cropped.
+
+### Testing checklist (Phase 2)
+
+- [ ] **Firmware:** **`HIDE`** only on **ready** **falling** (after arm); **`NEXT`** on **in-position** stop; no lines at idle.
+- [ ] **IPC:** **mpv** stays running; **`NEXT`** / **`HIDE`** hit the same socket (no per-event **spawn**).
+- [ ] Playlist advances **only** on **`NEXT`**.
+- [ ] **`HIDE`** blanks **without** advancing index; clip **loops** until **`HIDE`**.
+- [ ] Visually: **no** video while rail **moves** ( **`HIDE`** before / during move).
+- [ ] Unplug/replug USB: document whether app must restart (acceptable for v1).
+
+### What stays for a “detail pass” after Phase 2 v1
+
+**venv + requirements.txt**, **notarized** bundle (if needed), **CI**, venue **runbook** — **IPC** / timing are **not** deferred; they are **v1**.
 
 ## Folder split (project shape)
 
-- **`arduino/`** — **Phase 1 priority:** sketch + wiring notes (relay bench, then **XY‑160D**). USB = Serial Monitor first, laptop consumer later.
-- **`laptop/`** — **Phase 2:** playlist, looper, **serial listener** when Arduino events are trusted.
+- **`arduino/`** — Bench sketch + [README](arduino/jip_rail_controller/README.md); later **XY‑160D** + **ready sensor** swap. Same **USB** now shared with **Phase 2** show app.
+- **`laptop/`** — **Phase 2 (in progress):** playlist, player, **serial listener** — see [Phase 2 section](#phase-2-laptop-beamer-and-serial-sync).
 
-Shared contract (for Phase 2): **one** playlist step when **ready** stops the motor (**step** alone does not advance video).
+Shared contract (for Phase 2): **`HIDE`** when **ready clears** blanks HDMI; **`NEXT`** when **ready** stops the motor loads and loops the **next** ordered **mp4**; **step** starts motion only (no show line).
 
 ## Global answers to your three questions (no dive yet)
 
 | Topic | Global idea |
 |--------|----------------|
-| **Video vs mechanics** | **Ready** event = **stop motor** + **advance to next looping clip**. Clip index increments on **ready**, not on **step**. |
-| **Button** | **Step** only **starts** (or re-enables) motor run until **ready**; still one physical control, Arduino‑wired preferred. |
-| **Playing videos** | Laptop **loops** current file; on serial from Arduino after **ready**, switch to **next** file and loop. |
+| **Video vs mechanics** | **Ready stop** → **`NEXT`** (next **mp4** loop). **Ready clear** → **`HIDE`**. **Step** → motor only. |
+| **Button** | **Step** starts transport; **ready** edges **start/stop** projection. |
+| **Playing videos** | **One mp4 per card**, fixed order; **loop** only while **ready** says **in-position** (until **`HIDE`**). |
 
 ## What we defer to a “detail pass”
 
 **Phase 1:** **ready** hardware choice, **re-arm** / edge logic, final pin map, debounce constants, relay vs **XY‑160D** swap checklist, optional motor timeout / jam behavior. **Limit switches** remain **out of scope**.
 
-**Phase 2 (after Arduino is done):** mpv vs VLC, fullscreen + loop, serial parser robustness, beamer resolution, install runbook.
+**Phase 2:** see [Phase 2: Laptop, beamer, and serial sync](#phase-2-laptop-beamer-and-serial-sync) — **Python + pyserial + mpv JSON IPC** on **MacBook Air M2**; **`HIDE`** / **`NEXT`** from **ready** edges.
 
 ## Next step
 
-**Phase 1:** Prove **step → motor on → ready → motor off → Serial line** and **step again** with **re-arm** on the **relay + 5 V** bench stack ([video reference](https://www.youtube.com/watch?v=GxvDaQeCQKw)). Pick the **exact** `Serial` line you will keep for **Phase 2** so the laptop only needs a consumer, not a rethink.
+**Phase 2:** Arduino — **`HIDE`** on **ready fall** (+ **re-arm**); **`laptop/`** — playlist, serial @ **115200**, **mpv** **IPC** for **`NEXT`** / **`HIDE`** on HDMI; rehearse on beamer.
