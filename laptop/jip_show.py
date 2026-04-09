@@ -87,6 +87,7 @@ def start_mpv(
     cmd = [
         exe,
         "--idle=yes",
+        "--script-opts-append=osc-idlescreen=no",
         "--force-window=immediate",
         "--loop-file=inf",
         "--fullscreen",
