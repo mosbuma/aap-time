@@ -4,20 +4,20 @@
  * Debounce pattern from DFRobot project 13:
  *   https://github.com/DFRobot/Beginner-Kit-for-Arduino/blob/master/Sample%20Code/project_13/project_13.ino
  *
- * No separate lesson LED on the print — use the relay module’s built-in LED as status.
+ * Behaviour (see PLAN.md):
+ *   D2 STEP — each press: if a video is playing, HIDE then motor on; else motor on.
+ *     Then wait for D4 ready OPEN (LOW), then CLOSED (HIGH); on close stop motor and
+ *     print NEXT <n> (one clip loops on laptop). Ignore STEP while motor is moving.
+ *   D4 READY — LOW = open, HIGH = closed (in position). Used only while motor runs;
+ *     does not send HIDE; releasing ready does not stop video.
  *
- * Same button wiring as the kit (pull-down to GND, switch to 5 V when pressed → HIGH):
- *   D2 = START — momentary press turns motor / relay ON.
- *   D4 = STOP / ready — press turns motor / relay OFF and prints NEXT; release prints HIDE
- *       (Phase 2 laptop blanks video on HIDE). Use a real sensor that clears when the card moves.
+ * Wiring: kit-style pull-down on D2/D4 (released = LOW, pressed/closed = HIGH).
  */
 
 const int pinStart = 2;
 const int pinRelay = 3;
 const int pinStop = 4;
 
-// 0 = HIGH on D3 = relay ON (many kit / discrete boards)
-// 1 = LOW on D3 = relay ON (common opto relay modules)
 #ifndef RELAY_ACTIVE_LOW
 #define RELAY_ACTIVE_LOW 0
 #endif
@@ -34,8 +34,12 @@ unsigned long lastStopDebounce = 0;
 
 uint16_t clipIndex = 0;
 
-// After NEXT, the next ready release emits HIDE (no HIDE at boot or without a prior NEXT).
-static bool armedForHide = false;
+static const uint8_t MOVE_IDLE = 0;
+static const uint8_t MOVE_WAIT_OPEN = 1;
+static const uint8_t MOVE_WAIT_CLOSE = 2;
+
+static uint8_t movePhase = MOVE_IDLE;
+static bool showingVideo = false;
 
 static void relaySetMotorOn(bool on) {
 #if RELAY_ACTIVE_LOW
@@ -45,20 +49,20 @@ static void relaySetMotorOn(bool on) {
 #endif
 }
 
-static void onStopPressed() {
-  relaySetMotorOn(false);
-  Serial.print(F("NEXT "));
-  Serial.println(clipIndex);
-  clipIndex++;
-  armedForHide = true;
-}
-
-static void onReadyReleased() {
-  if (!armedForHide) {
+static void onStepPressed() {
+  if (movePhase != MOVE_IDLE) {
     return;
   }
-  Serial.println(F("HIDE"));
-  armedForHide = false;
+  if (showingVideo) {
+    Serial.println(F("HIDE"));
+    showingVideo = false;
+  }
+  relaySetMotorOn(true);
+  if (stopState == HIGH) {
+    movePhase = MOVE_WAIT_OPEN;
+  } else {
+    movePhase = MOVE_WAIT_CLOSE;
+  }
 }
 
 void setup() {
@@ -67,14 +71,42 @@ void setup() {
   pinMode(pinRelay, OUTPUT);
 
   relaySetMotorOn(false);
+  movePhase = MOVE_IDLE;
+  showingVideo = false;
+
   startState = digitalRead(pinStart);
   stopState = digitalRead(pinStop);
 
   Serial.begin(115200);
-  Serial.println(F("jip_rail_controller D2=START D4=ready NEXT/HIDE D3=relay"));
+  Serial.println(F("jip_rail_controller D2=STEP D4=ready NEXT/HIDE-on-step"));
 }
 
 void loop() {
+  {
+    int reading = digitalRead(pinStop);
+    if (reading != lastStopReading) {
+      lastStopDebounce = millis();
+    }
+    if ((millis() - lastStopDebounce) > debounceDelay) {
+      if (reading != stopState) {
+        stopState = reading;
+      }
+    }
+    lastStopReading = reading;
+  }
+
+  if (movePhase == MOVE_WAIT_OPEN && stopState == LOW) {
+    movePhase = MOVE_WAIT_CLOSE;
+  }
+  if (movePhase == MOVE_WAIT_CLOSE && stopState == HIGH) {
+    relaySetMotorOn(false);
+    Serial.print(F("NEXT "));
+    Serial.println(clipIndex);
+    clipIndex++;
+    showingVideo = true;
+    movePhase = MOVE_IDLE;
+  }
+
   {
     int reading = digitalRead(pinStart);
     if (reading != lastStartReading) {
@@ -84,28 +116,10 @@ void loop() {
       if (reading != startState) {
         startState = reading;
         if (startState == HIGH) {
-          relaySetMotorOn(true);
+          onStepPressed();
         }
       }
     }
     lastStartReading = reading;
-  }
-
-  {
-    int reading = digitalRead(pinStop);
-    if (reading != lastStopReading) {
-      lastStopDebounce = millis();
-    }
-    if ((millis() - lastStopDebounce) > debounceDelay) {
-      if (reading != stopState) {
-        stopState = reading;
-        if (stopState == HIGH) {
-          onStopPressed();
-        } else {
-          onReadyReleased();
-        }
-      }
-    }
-    lastStopReading = reading;
   }
 }

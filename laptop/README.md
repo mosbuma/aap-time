@@ -18,7 +18,7 @@ mkdir -p videos
 
 **Displays:** System Settings → Displays → **Extend**. Note which index is the projector; pass **`--fs-screen`** (often **`1`** if **`0`** is the built-in).
 
-**Bench D4 tact:** Press = **`NEXT`** (motor stops), **release** = **`HIDE`**. A held button never sends **`HIDE`**.
+**Firmware (see [PLAN.md](../PLAN.md)):** **`HIDE`** when **STEP** is pressed while a clip is playing; **`NEXT`** when **READY** opens then closes after a motor run. **`READY`** does not stop video.
 
 ## Run
 

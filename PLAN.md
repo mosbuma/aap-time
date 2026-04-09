@@ -1,9 +1,9 @@
 ---
 name: Curtain rail video sync
-overview: "Arduino + laptop running: step/relay, D4 ready tact → NEXT/HIDE over serial; mpv on HDMI. Open work — sequence and button combinations vs intended show choreography."
+overview: "STEP starts move and (when a clip is playing) sends HIDE; READY open→close gates NEXT + one looping clip. Laptop: pyserial + mpv."
 todos:
   - id: phase1-arduino-fsm
-    content: "Bench sketch — step → motor, ready stops motor; NEXT/HIDE serial; debounce"
+    content: "Bench sketch — STEP/HIDE + READY-gated NEXT; debounce"
     status: completed
   - id: phase1-arduino-repo
     content: "arduino/ project + pin notes (README, links.md)"
@@ -12,8 +12,8 @@ todos:
     content: "Laptop: pyserial + mpv IPC, playlist, fs-screen"
     status: completed
   - id: phase2-sequence-buttons
-    content: "Align step / ready edges, re-arm, and HIDE–NEXT ordering with operator workflow"
-    status: pending
+    content: "Operator sequence: STEP / READY as specified in Show choreography"
+    status: completed
 isProject: false
 ---
 
@@ -21,14 +21,13 @@ isProject: false
 
 ## Current status
 
-- **Arduino** firmware is **uploaded** and **running** (`arduino/jip_rail_controller/`). **Laptop** show app is **installed** and **running** (`laptop/jip_show.py`, **mpv**, ordered **`videos/*.mp4`**). USB serial at **115200** carries **`NEXT <n>`** and **`HIDE`**.
-- **Open issue:** **sequence and button combinations** do not yet match the **intended** operator flow. Examples of what debouncing, **re-arm**, and edge timing must respect: **step** should only start transport when safe; **`HIDE`** should fire when **ready** clears after an in-position stop (not spuriously); **`NEXT`** must advance the playlist **once** per card; combined **D2/D4** use on the bench tact must not **double-advance** or **skip** **`HIDE`**. Firmware and/or operator procedure need a **focused pass** against the [Show cycle](#show-cycle) below.
+**Arduino** and **laptop** (`jip_show.py`) are the live stack: **115200** serial, **`NEXT <n>`** / **`HIDE`**. Behaviour matches [Show choreography](#show-choreography) below (upload the current `jip_rail_controller.ino`).
 
-Parts, tutorials, and long hardware notes: **[reference/links.md](reference/links.md)**. Pin map and bench wiring: **[arduino/jip_rail_controller/README.md](arduino/jip_rail_controller/README.md)**.
+Hardware notes: **[reference/links.md](reference/links.md)**. Pins and bench wiring: **[arduino/jip_rail_controller/README.md](arduino/jip_rail_controller/README.md)**.
 
 ## What you are building
 
-Motorized curtain rail; **step** starts transport (motor until **ready**). **Ready** is the show clock: when the card is **in position**, the Arduino **stops the motor** and sends **`NEXT`**; when **ready clears**, it sends **`HIDE`**. Laptop + beamer loop **one mp4 per card** in fixed order. **No limit switches** — **ready** is the sole in-position signal. Final rail: **XY‑160D** + **12 V** motor; **bench** may use **relay + small motor** (same sketch pins: **D2** step, **D3** relay, **D4** ready).
+Motorized curtain rail: **STEP** advances the **mechanical** state (motor on for the next move) and **stops video** when a clip is already playing. **READY** only participates **while the motor runs** — it does **not** stop video. Laptop + beamer play **one ordered mp4 per card**, looping until the next **STEP**. **No limit switches** for v1; **READY** is the in-position signal for **when to stop the motor** and cue **which** clip (via **`NEXT`**). Final rail: **XY‑160D** + **12 V** motor; bench may use **relay + small motor** (**D2** STEP, **D3** relay, **D4** READY).
 
 ```mermaid
 flowchart TB
@@ -44,71 +43,71 @@ flowchart TB
   PC --> HDMI[Beamer]
 ```
 
-## Show cycle
+## Show choreography
 
-```mermaid
-stateDiagram-v2
-  direction LR
-  state "Video loops, motor off" as Showing
-  state "Video off, motor may run" as DarkMove
-  Showing --> DarkMove: ready_clears_HIDE
-  DarkMove --> Showing: ready_stops_motor_NEXT
-```
+**Boot:** Motor **off**. **READY** may be open or closed. Laptop shows **no** video (until the first **`NEXT`**).
 
-| Control | Role |
+**STEP press (D2):**
+
+1. If a clip is **playing** (`NEXT` already happened for this card): send **`HIDE`** immediately (laptop stops video; playlist index **unchanged**).
+2. Motor **on**.
+3. Wait for **READY open** (logic **LOW** with kit pull-down wiring = “open”). If **already open**, skip this wait.
+4. Wait for **READY closed** (**HIGH** = in position).
+5. Motor **off**; send exactly one **`NEXT <n>`** → laptop loads **one** file and **loops** it (`<n>` is informational; **laptop** advances its playlist on each **`NEXT`**).
+
+**While a clip loops:** **READY** does **not** send **`HIDE`** or **`NEXT`**. Only **STEP** starts the next move and blanks projection.
+
+**STEP ignored** while the motor is already moving (between STEP and the **READY** close that fires **`NEXT`**).
+
+| Signal | Role |
 | --- | --- |
-| **Step (D2)** | Starts transport — motor **on** until **ready** stops it. Does **not** send show lines (unless you add debug). |
-| **Ready active** | Motor **off**; **`NEXT <n>`** → laptop loads and **loops** next **mp4**. |
-| **Ready inactive** (after a valid stop) | **`HIDE`** → stop/black projection; **playlist index unchanged**. |
+| **`HIDE`** | **STEP** while video is playing — immediate blackout; **not** tied to **READY** release. |
+| **`NEXT <n>`** | After motor run, when **READY** closes — motor stops; **one** clip loops. |
 
-**Playlist rule:** advance **only** on **`NEXT`**. **`HIDE`** never increments the index.
+**Playlist rule:** laptop increments only on **`NEXT`**. **`HIDE`** does not advance the index.
 
-**Bench tact on D4:** **press** simulates in-position (**NEXT**); **release** simulates clear (**HIDE**). A **held** tact never releases — behavior differs from a real sensor that clears when the card moves; use that to debug **ordering** before swapping hardware.
+**Bench tact on D4:** **OPEN** then **CLOSED** simulates transit then “in position.” For testing: after **STEP**, release **D4** (open) then press **D4** (close) to complete the cycle.
 
 ## Serial contract (Arduino → laptop)
 
-The laptop parses line-at-a-time at **115200**:
+Parse line-at-a-time at **115200**:
 
 | Line | When | Laptop |
 | --- | --- | --- |
-| **`HIDE`** | **Ready** inactive after an armed in-position stop | IPC stop/black; **do not** change playlist index |
-| **`NEXT <n>`** | **Ready** active edge when motor stops / seated | IPC load and loop **next** clip (or validate **`<n>`**) |
+| **`HIDE`** | **STEP** pressed while a clip is considered active (firmware: after a completed **`NEXT`** cycle until the next **STEP**) | IPC **stop** / idle; **do not** change playlist index |
+| **`NEXT <n>`** | **READY** **closed** after motor start and **OPEN** phase as above | IPC **loadfile** + loop **next** playlist entry |
 
 Ignore other lines. **CR** / **LF** endings.
 
 ## Arduino firmware (summary)
 
-- Debounced **D2** / **D4**; **D3** relay ( **`RELAY_ACTIVE_LOW`** for opto modules).
-- **`onStopPressed`**: motor off, **`NEXT`**, increment clip counter, arm **`HIDE`**.
-- **`onReadyReleased`**: **`HIDE`** only if armed (suppresses noise at boot).
-
-Source of truth: **`jip_rail_controller.ino`**.
+Debounced **D2** / **D4**; **D3** relay (**`RELAY_ACTIVE_LOW`** for opto modules). State: **`MOVE_WAIT_OPEN` / `MOVE_WAIT_CLOSE`**, **`showingVideo`**. Source of truth: **`jip_rail_controller.ino`**.
 
 ## Laptop app (summary)
 
-**Python 3**, **pyserial**, **mpv** with **`--input-ipc-server`** — one process; **`NEXT`** / **`HIDE`** drive **`loadfile`** / stop. **`--fs-screen`** targets the projector. Details: **[laptop/README.md](laptop/README.md)**.
+**Python 3**, **pyserial**, **mpv** JSON IPC; **`NEXT`** → `loadfile` next path; **`HIDE`** → `stop`. **[laptop/README.md](laptop/README.md)**.
 
 ## Environment
 
 | Topic | Notes |
 | --- | --- |
-| **Show computer** | MacBook Air (M2) + **HDMI** beamer; **extended** desktop; set **`fs-screen`** to projector index |
-| **Serial device** | e.g. **`/dev/cu.usbmodem…`** — pass **`--port`** if auto-detect is wrong |
+| **Show computer** | MacBook Air (M2) + **HDMI** beamer; **extended** desktop; **`--fs-screen`** = projector index |
+| **Serial device** | e.g. **`/dev/cu.usbmodem…`** or **`--port`** |
 
-## Later: real ready sensor on D4
+## Later: real READY sensor on D4
 
-Keep **`HIDE`** / **`NEXT …`** lines fixed. Change only wiring and firmware polarity/debounce if the production sensor’s active level differs from bench **HIGH** = ready.
+Keep **`HIDE`** / **`NEXT …`** semantics. Adjust wiring/firmware only if **closed**/**open** polarity differs from bench **HIGH** = closed (in position).
 
-## Remaining work (priority)
+## Remaining work (optional / production)
 
-1. **Sequence / buttons** — Reproduce unwanted cases (double **`NEXT`**, missing **`HIDE`**, wrong order on **step** + **D4**). Adjust **re-arm**, edge gating (e.g. only **`HIDE`** after **`NEXT`**), or require **step** before accepting another **ready** cycle; document the **operator** sequence once stable.
-2. **Rehearsal** — Full loop: **step** → move → **`HIDE`** when **ready** clears → dark while moving → **`NEXT`** at in-position → loop; repeat through playlist.
-3. **Rail** — Swap bench relay rig for **XY‑160D** + **12 V** when mechanics are fixed; **D4** sensor replace tact when ready.
+1. **Rehearsal** on hardware: **STEP** → transit → **READY** close → loop; **STEP** again → **`HIDE`** + move → next clip.
+2. **Rail** — **XY‑160D** + **12 V**; replace bench relay.
+3. **Polish** — logging, venue runbook, optional use of **`<n>`** on laptop to validate against manifest.
 
 ## Folder layout
 
 | Path | Role |
 | --- | --- |
 | **`arduino/jip_rail_controller/`** | Firmware + pin README |
-| **`laptop/`** | **`jip_show.py`**, venv, **`videos/`** |
+| **`laptop/`** | **`jip_show.py`**, **`videos/`** |
 | **`reference/links.md`** | Parts and links |

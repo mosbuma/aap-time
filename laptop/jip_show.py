@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-JIP show runner — USB serial from Arduino (NEXT / HIDE) drives mpv on the beamer via JSON IPC.
+JIP show runner — USB serial from Arduino drives mpv on the beamer via JSON IPC.
 
-See ../PLAN.md Phase 2. Intended for macOS (M2 Air + HDMI); mpv from Homebrew.
+Arduino: HIDE on STEP while video active; NEXT when READY completes after motor run.
+See ../PLAN.md. Intended for macOS (M2 Air + HDMI); mpv from Homebrew.
 """
 
 from __future__ import annotations
