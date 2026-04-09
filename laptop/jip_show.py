@@ -48,7 +48,7 @@ class MpvIpc:
     def __init__(self, sock_path: str) -> None:
         self._sock_path = sock_path
 
-    def command(self, *args: str) -> None:
+    def command(self, *args: object) -> None:
         payload = {"command": list(args)}
         raw = json.dumps(payload, separators=(",", ":")) + "\n"
         deadline = time.monotonic() + 2.0
@@ -90,8 +90,10 @@ def start_mpv(
         "--force-window=immediate",
         "--loop-file=inf",
         "--fullscreen",
+        "--native-fs=yes",
         f"--fs-screen={fs_screen}",
         f"--input-ipc-server={sock_path}",
+        "--no-config",
         "--no-terminal",
         "--really-quiet",
     ]
@@ -157,6 +159,12 @@ def main() -> int:
     ipc = MpvIpc(args.ipc_socket)
     playlist_index = -1
 
+    def load_clip(path: str) -> None:
+        # Force fullscreen after each load; mpv can otherwise reopen as a small window
+        # after stop/load cycles on some macOS display setups.
+        ipc.command("loadfile", path, "replace")
+        ipc.command("set_property", "fullscreen", True)
+
     def shutdown(signum: Optional[int] = None, _frame: object = None) -> None:
         try:
             mpv_proc.terminate()
@@ -205,7 +213,7 @@ def main() -> int:
                     continue
                 path = playlist[playlist_index]
                 try:
-                    ipc.command("loadfile", path, "replace")
+                    load_clip(path)
                 except Exception as e:
                     print(f"NEXT loadfile: {e}", file=sys.stderr)
     finally:
